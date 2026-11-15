@@ -29,11 +29,11 @@ test('it should correctly generated all required pino files', (t) => {
     const firstFile = testJSFileExists('first-')
     const secondFile = testJSFileExists('second-', 'abc/cde')
 
-    const threadStream = testJSFileExists('thread-stream-')
-    const pinoWorker = testJSFileExists('pino-worker-')
-    const pinoPipelineWorker = testJSFileExists('pino-pipeline-worker-')
-    const pinoFile = testJSFileExists('pino-file-')
-    const pinoPretty = testJSFileExists('pino-pretty-')
+    const threadStream = testJSFileExists('thread-stream-worker')
+    const pinoWorker = testJSFileExists('pino-worker')
+    const pinoPipelineWorker = testJSFileExists('pino-pipeline-worker')
+    const pinoFile = testJSFileExists('pino-file')
+    const pinoPretty = testJSFileExists('pino-pretty')
 
     const dependencies = {
       'pino/file': pinoFile,

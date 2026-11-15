@@ -39,9 +39,7 @@
     "prepublishOnly": "npm run ci",
     "postpublish": "git push origin && git push origin -f --tags"
   },
-  "dependencies": {
-    "memfs": "^4.2.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "c8": "^10.1.2",
     "clean-webpack-plugin": "^4.0.0",
@@ -51,7 +49,7 @@
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-promise": "^5.1.1",
     "execa": "^5.0.0",
-    "pino": "^9.0.0",
+    "pino": "^10.4.0",
     "pino-pretty": "^11.0.0",
     "prettier": "^3.0.0",
     "tap": "^16.0.0",

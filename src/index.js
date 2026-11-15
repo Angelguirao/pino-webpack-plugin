@@ -1,7 +1,7 @@
 const webpack = require('webpack')
-const CommonJsRequireDependency = require('webpack/lib/dependencies/CommonJsRequireDependency')
-const { createFsFromVolume, Volume } = require('memfs')
-const { join, dirname, relative } = require('path')
+const CommonJsRequireDependency = require('webpack/lib/dependencies/commonjs/CommonJsRequireDependency')
+const { existsSync } = require('fs')
+const { join, dirname, extname, relative } = require('path')
 // const { cache } = require('webpack') // Cache handling missing
 
 const fileBanner = `/* Start of pino-webpack-plugin additions */
@@ -23,8 +23,6 @@ const compatibilityFooter = `
 const PLUGIN_NAME = 'PinoWebpackPlugin'
 // const CACHE_ID = 'pino-worker-plugin' // Cache handling missing
 
-const fs = createFsFromVolume(new Volume())
-
 function quote(path) {
   return `'${path.replace(/([\\'])/g, '\\$1')}'`
 }
@@ -36,6 +34,10 @@ class PinoWebpackPlugin {
   }
 
   apply(compiler) {
+    const outputFilename = compiler.options.output.filename
+    const workerExtension = typeof outputFilename === 'string' ? extname(outputFilename) : ''
+    const workerFilename = `[name]${workerExtension || '.js'}`
+
     compiler.hooks.thisCompilation.tap(PLUGIN_NAME, (compilation) => {
       const dependencies = {} // {entry: source file, file: generated file}
 
@@ -54,7 +56,11 @@ class PinoWebpackPlugin {
             case mod.rawRequest === 'pino':
               addChildCompilerEntryPoint('pino/file', mod.context, './file.js', 'pino-file')
               addChildCompilerEntryPoint('pino-worker', mod.context, './lib/worker.js')
-              addChildCompilerEntryPoint('pino-pipeline-worker', mod.context, './lib/worker-pipeline.js')
+              addChildCompilerEntryPoint(
+                'pino-pipeline-worker',
+                mod.context,
+                existsSync(join(mod.context, 'lib/worker-pipeline.js')) ? './lib/worker-pipeline.js' : './lib/worker.js'
+              )
               break
 
             case this.transports.includes(mod.rawRequest):
@@ -81,6 +87,7 @@ class PinoWebpackPlugin {
         const childCompiler = compilation.createChildCompiler(
           `${PLUGIN_NAME}ChildCompiler`,
           {
+            filename: workerFilename,
             library: {
               type: 'commonjs2'
             },
@@ -89,12 +96,6 @@ class PinoWebpackPlugin {
           Object.values(dependencies).map((worker) => worker.entry)
         )
         childCompiler.inputFileSystem = compiler.inputFileSystem
-        // Generate files without footer in memory
-        // to be written with footer to output path by main compilation
-        // __
-        // If the child compiler would write to file system,
-        // we would have to manually handle the footer-less file deletion
-        childCompiler.outputFileSystem = fs
 
         // Enable required plugins
         new webpack.node.NodeTemplatePlugin({
@@ -105,25 +106,8 @@ class PinoWebpackPlugin {
         }).apply(childCompiler)
         new webpack.node.NodeTargetPlugin().apply(childCompiler)
 
-        // When the files have been compiled, add a compatibility footer
+        // Keep track of the emitted filename for each dependency.
         childCompiler.hooks.thisCompilation.tap(PLUGIN_NAME, (childCompilation) => {
-          // Add assets with compatibility footer to main compilation
-          childCompilation.hooks.processAssets.tap(
-            {
-              name: `${PLUGIN_NAME}ChildCompiler`,
-              stage: webpack.Compilation.PROCESS_ASSETS_STAGE_ADDITIONS
-            },
-            (childAssets) => {
-              for (const path of Object.keys(childAssets)) {
-                if (path.endsWith('.js')) {
-                  // Add generated file with compatibility footer to main compilation assets
-                  compilation.emitAsset(path, new webpack.sources.ConcatSource(childAssets[path], compatibilityFooter))
-                }
-              }
-            }
-          )
-
-          // Get generated file for each dependency
           childCompilation.hooks.chunkAsset.tap(`${PLUGIN_NAME}ChildCompiler`, (chunk, file) => {
             // Unescape pino/file
             const dependencyId = chunk.name === 'pino-file' ? 'pino/file' : chunk.name
@@ -134,9 +118,17 @@ class PinoWebpackPlugin {
           })
         })
 
-        // Perform the dependencies compilation
-        childCompiler.run((err, stats) => {
-          additionalAssetsCallback(err, stats)
+        // runAsChild merges child assets into the parent compilation. run() does
+        // not, which leaves the banner pointing at worker files that were never emitted.
+        childCompiler.runAsChild((err, entries, childCompilation) => {
+          if (!err) {
+            for (const { name, source } of childCompilation.getAssets()) {
+              if (/\.(?:c|m)?js$/.test(name)) {
+                compilation.updateAsset(name, new webpack.sources.ConcatSource(source, compatibilityFooter))
+              }
+            }
+          }
+          additionalAssetsCallback(err)
         })
       })
 
